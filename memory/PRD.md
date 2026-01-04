@@ -1,6 +1,6 @@
 # Assistant IA Médical - PRD (Product Requirements Document)
 
-## Version: 1.0.0
+## Version: 2.0.0
 ## Date de création: 4 Janvier 2026
 ## Dernière mise à jour: 4 Janvier 2026
 
@@ -74,18 +74,27 @@ Application "Assistant IA Médical" complète pour aider le personnel soignant e
 
 ## 4. Ce qui a été implémenté
 
-### Backend (FastAPI + MongoDB)
-- `server.py` avec tous les endpoints
+### Backend v2.0 (FastAPI + MongoDB)
+- `server.py` avec tous les endpoints enrichis
 - Authentification JWT complète
 - CRUD Documents, Catégories, Utilisateurs
+- **Upload fichiers multi-formats** (PDF, Word, Excel, PNG, JPG)
+- **Extraction texte automatique** pour recherche full-text
+- **Système de favoris** (POST/DELETE /api/favorites)
+- **Notifications** pour nouveaux documents (GET/PUT /api/notifications)
+- **Export PDF** de documents sélectionnés (POST /api/documents/export-pdf)
+- **Recherche full-text** dans les documents
 - Endpoints IA: suggestions-context, suggestions-enhanced, qa
-- Dashboard stats avec agrégations MongoDB
+- Dashboard stats enrichi avec favoris et notifications
 - Seed data pour données de démonstration
 
-### Frontend (React + Tailwind + Shadcn)
-- Pages: Login, Register, Dashboard, AIAssistant, Documents, Categories, Users, Settings
-- Composants: Layout, Sidebar avec navigation conditionnelle
-- Contextes: AuthContext, ThemeContext
+### Frontend v2.0 (React + Tailwind + Shadcn)
+- Pages: Login, Register, Dashboard, AIAssistant, Documents, **Favorites**, **Notifications**, Categories, Users, Settings
+- Composants: Layout, Sidebar avec **badge notifications**
+- Contextes: AuthContext, ThemeContext, **NotificationContext**
+- **Upload de fichiers** avec drag & drop
+- **Sélection multiple** pour export PDF
+- **Boutons favoris** sur chaque document
 - Intégration API complète
 - Mode clair/sombre fonctionnel
 
@@ -93,6 +102,7 @@ Application "Assistant IA Médical" complète pour aider le personnel soignant e
 - GPT-5.2 via Emergent LLM Key (emergentintegrations)
 - Suggestions contextuelles et avancées
 - Q&A basé sur les documents avec historique
+- **Contexte enrichi** avec contenu des fichiers uploadés
 
 ---
 
@@ -105,17 +115,18 @@ Application "Assistant IA Médical" complète pour aider le personnel soignant e
 - [x] CRUD Documents et Catégories
 - [x] Gestion utilisateurs
 
-### P1 - Important (À faire)
-- [ ] Export des documents (PDF, Word)
-- [ ] Notifications temps réel
-- [ ] Recherche avancée dans les documents
-- [ ] Pagination des listes
+### P1 - Important (Fait en v2.0)
+- [x] Export des documents (PDF)
+- [x] Notifications pour nouveaux documents
+- [x] Recherche full-text dans les documents
+- [x] Système de favoris
 
 ### P2 - Souhaitable (À faire)
+- [ ] Pagination des listes
 - [ ] Audit trail des actions
 - [ ] Tableau de bord personnalisable
-- [ ] Favoris documents
 - [ ] Tags personnalisés
+- [ ] Partage de documents
 
 ### P3 - Nice to have
 - [ ] Mode offline
