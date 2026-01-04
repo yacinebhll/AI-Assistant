@@ -260,6 +260,82 @@ class MedicalAITester:
                      "" if success else f"Failed: {data}")
         return success
 
+    def test_favorites(self):
+        """Test favorites functionality"""
+        print("\n⭐ Testing Favorites...")
+        
+        if not self.created_document_id:
+            self.log_test("Favorites test", False, "No document available for testing")
+            return False
+
+        # Add to favorites
+        success, data = self.make_request('POST', f'favorites/{self.created_document_id}', 
+                                        token=self.admin_token)
+        self.log_test("Add document to favorites", success and 'message' in data,
+                     "" if success else f"Failed: {data}")
+
+        # Get favorites
+        success, data = self.make_request('GET', 'favorites', token=self.admin_token)
+        self.log_test("Get favorites list", success and isinstance(data, list),
+                     "" if success else f"Failed: {data}")
+
+        # Remove from favorites
+        success, data = self.make_request('DELETE', f'favorites/{self.created_document_id}', 
+                                        token=self.admin_token)
+        self.log_test("Remove document from favorites", success and 'message' in data,
+                     "" if success else f"Failed: {data}")
+
+        return True
+
+    def test_notifications(self):
+        """Test notifications functionality"""
+        print("\n🔔 Testing Notifications...")
+        
+        # Get notifications
+        success, data = self.make_request('GET', 'notifications', token=self.admin_token)
+        self.log_test("Get notifications", success and isinstance(data, list),
+                     "" if success else f"Failed: {data}")
+
+        # Get unread count
+        success, data = self.make_request('GET', 'notifications/unread-count', token=self.admin_token)
+        self.log_test("Get unread notifications count", success and 'count' in data,
+                     "" if success else f"Failed: {data}")
+
+        # Mark all as read
+        success, data = self.make_request('PUT', 'notifications/read-all', token=self.admin_token)
+        self.log_test("Mark all notifications as read", success and 'message' in data,
+                     "" if success else f"Failed: {data}")
+
+        return True
+
+    def test_export_pdf(self):
+        """Test PDF export functionality"""
+        print("\n📄 Testing PDF Export...")
+        
+        if not self.created_document_id:
+            self.log_test("PDF export test", False, "No document available for testing")
+            return False
+
+        # Export PDF
+        export_data = {"document_ids": [self.created_document_id]}
+        
+        # Use different request method for PDF export (blob response)
+        url = f"{self.base_url}/api/documents/export-pdf"
+        headers = {'Content-Type': 'application/json'}
+        if self.admin_token:
+            headers['Authorization'] = f'Bearer {self.admin_token}'
+
+        try:
+            response = requests.post(url, json=export_data, headers=headers, timeout=30)
+            success = response.status_code == 200 and response.headers.get('content-type') == 'application/pdf'
+            self.log_test("Export documents to PDF", success,
+                         "" if success else f"Failed: Status {response.status_code}, Content-Type: {response.headers.get('content-type')}")
+        except Exception as e:
+            self.log_test("Export documents to PDF", False, f"Exception: {str(e)}")
+            success = False
+
+        return success
+
     def test_ai_assistant(self):
         """Test AI assistant endpoints"""
         print("\n🤖 Testing AI Assistant...")
