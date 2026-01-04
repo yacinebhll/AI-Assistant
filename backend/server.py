@@ -1,5 +1,6 @@
-from fastapi import FastAPI, APIRouter, HTTPException, Depends, status
+from fastapi import FastAPI, APIRouter, HTTPException, Depends, status, UploadFile, File, Form, Query
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from fastapi.responses import StreamingResponse
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
@@ -13,8 +14,23 @@ from datetime import datetime, timezone, timedelta
 import bcrypt
 import jwt
 from emergentintegrations.llm.chat import LlmChat, UserMessage
+import aiofiles
+import io
+import re
+
+# File processing imports
+from PyPDF2 import PdfReader
+from docx import Document as DocxDocument
+from openpyxl import load_workbook
+from reportlab.lib.pagesizes import A4
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
+from reportlab.lib.units import inch
 
 ROOT_DIR = Path(__file__).parent
+UPLOAD_DIR = ROOT_DIR / "uploads"
+UPLOAD_DIR.mkdir(exist_ok=True)
+
 load_dotenv(ROOT_DIR / '.env')
 
 # MongoDB connection
@@ -43,6 +59,10 @@ security = HTTPBearer()
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
+# Allowed file types
+ALLOWED_EXTENSIONS = {'.pdf', '.docx', '.doc', '.xlsx', '.xls', '.png', '.jpg', '.jpeg', '.gif', '.txt'}
+MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB
+
 # ============== MODELS ==============
 
 class UserRole:
@@ -70,18 +90,6 @@ class UserResponse(BaseModel):
 class UserRoleUpdate(BaseModel):
     role: str
 
-class DocumentCreate(BaseModel):
-    title: str
-    content: str
-    category_id: str
-    visibility: List[str] = [UserRole.ADMIN, UserRole.DIRECTION, UserRole.PERSONNEL_SOIGNANT]
-
-class DocumentUpdate(BaseModel):
-    title: Optional[str] = None
-    content: Optional[str] = None
-    category_id: Optional[str] = None
-    visibility: Optional[List[str]] = None
-
 class DocumentResponse(BaseModel):
     model_config = ConfigDict(extra="ignore")
     id: str
@@ -91,8 +99,13 @@ class DocumentResponse(BaseModel):
     category_name: Optional[str] = None
     visibility: List[str]
     created_by: str
+    created_by_name: Optional[str] = None
     created_at: str
     updated_at: str
+    file_name: Optional[str] = None
+    file_type: Optional[str] = None
+    file_url: Optional[str] = None
+    is_favorite: Optional[bool] = False
 
 class CategoryCreate(BaseModel):
     name: str
@@ -115,9 +128,31 @@ class AIResponse(BaseModel):
 class DashboardStats(BaseModel):
     total_documents: int
     total_users: int
+    total_favorites: int
+    unread_notifications: int
     documents_by_category: List[dict]
     users_by_role: List[dict]
     recent_documents: List[dict]
+
+class NotificationResponse(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    id: str
+    user_id: str
+    document_id: str
+    document_title: str
+    message: str
+    is_read: bool
+    created_at: str
+
+class FavoriteResponse(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    id: str
+    user_id: str
+    document_id: str
+    created_at: str
+
+class ExportPDFRequest(BaseModel):
+    document_ids: List[str]
 
 # ============== AUTH HELPERS ==============
 
@@ -156,6 +191,86 @@ async def require_admin(current_user: dict = Depends(get_current_user)):
         raise HTTPException(status_code=403, detail="Accès réservé aux administrateurs")
     return current_user
 
+async def require_admin_or_direction(current_user: dict = Depends(get_current_user)):
+    if current_user["role"] not in [UserRole.ADMIN, UserRole.DIRECTION]:
+        raise HTTPException(status_code=403, detail="Accès réservé à l'administration et direction")
+    return current_user
+
+# ============== FILE PROCESSING HELPERS ==============
+
+def extract_text_from_pdf(file_path: Path) -> str:
+    try:
+        reader = PdfReader(str(file_path))
+        text = ""
+        for page in reader.pages:
+            text += page.extract_text() or ""
+        return text.strip()
+    except Exception as e:
+        logger.error(f"PDF extraction error: {e}")
+        return ""
+
+def extract_text_from_docx(file_path: Path) -> str:
+    try:
+        doc = DocxDocument(str(file_path))
+        text = "\n".join([para.text for para in doc.paragraphs])
+        return text.strip()
+    except Exception as e:
+        logger.error(f"DOCX extraction error: {e}")
+        return ""
+
+def extract_text_from_xlsx(file_path: Path) -> str:
+    try:
+        wb = load_workbook(str(file_path), data_only=True)
+        text = []
+        for sheet in wb.worksheets:
+            for row in sheet.iter_rows(values_only=True):
+                row_text = " | ".join([str(cell) if cell else "" for cell in row])
+                if row_text.strip():
+                    text.append(row_text)
+        return "\n".join(text).strip()
+    except Exception as e:
+        logger.error(f"XLSX extraction error: {e}")
+        return ""
+
+def extract_text_from_file(file_path: Path, file_type: str) -> str:
+    if file_type == '.pdf':
+        return extract_text_from_pdf(file_path)
+    elif file_type in ['.docx', '.doc']:
+        return extract_text_from_docx(file_path)
+    elif file_type in ['.xlsx', '.xls']:
+        return extract_text_from_xlsx(file_path)
+    elif file_type == '.txt':
+        try:
+            return file_path.read_text(encoding='utf-8')
+        except:
+            return ""
+    return ""
+
+async def create_notification_for_users(document_id: str, document_title: str, visibility: List[str], created_by: str):
+    """Create notifications for users who can see the document"""
+    now = datetime.now(timezone.utc).isoformat()
+    
+    # Get all users with matching roles except the creator
+    users = await db.users.find(
+        {"role": {"$in": visibility}, "id": {"$ne": created_by}},
+        {"_id": 0, "id": 1}
+    ).to_list(1000)
+    
+    notifications = []
+    for user in users:
+        notifications.append({
+            "id": str(uuid.uuid4()),
+            "user_id": user["id"],
+            "document_id": document_id,
+            "document_title": document_title,
+            "message": f"Nouveau document: {document_title}",
+            "is_read": False,
+            "created_at": now
+        })
+    
+    if notifications:
+        await db.notifications.insert_many(notifications)
+
 # ============== AUTH ENDPOINTS ==============
 
 @api_router.post("/auth/register", response_model=dict)
@@ -164,7 +279,6 @@ async def register(user_data: UserCreate):
     if existing:
         raise HTTPException(status_code=400, detail="Email déjà utilisé")
     
-    # First user becomes admin
     user_count = await db.users.count_documents({})
     role = UserRole.ADMIN if user_count == 0 else UserRole.PERSONNEL_SOIGNANT
     
@@ -273,7 +387,6 @@ async def get_categories(current_user: dict = Depends(get_current_user)):
 
 @api_router.delete("/document-categories/{category_id}")
 async def delete_category(category_id: str, current_user: dict = Depends(require_admin)):
-    # Check if documents use this category
     doc_count = await db.documents.count_documents({"category_id": category_id})
     if doc_count > 0:
         raise HTTPException(status_code=400, detail=f"Cette catégorie contient {doc_count} document(s). Supprimez-les d'abord.")
@@ -286,79 +399,273 @@ async def delete_category(category_id: str, current_user: dict = Depends(require
 # ============== DOCUMENTS ENDPOINTS ==============
 
 @api_router.post("/documents", response_model=DocumentResponse)
-async def create_document(document: DocumentCreate, current_user: dict = Depends(get_current_user)):
+async def create_document(
+    title: str = Form(...),
+    content: str = Form(""),
+    category_id: str = Form(...),
+    visibility: str = Form("admin,direction,personnel_soignant"),
+    file: Optional[UploadFile] = File(None),
+    current_user: dict = Depends(get_current_user)
+):
     # Verify category exists
-    category = await db.categories.find_one({"id": document.category_id}, {"_id": 0})
+    category = await db.categories.find_one({"id": category_id}, {"_id": 0})
     if not category:
         raise HTTPException(status_code=400, detail="Catégorie non trouvée")
     
+    visibility_list = [v.strip() for v in visibility.split(",")]
+    
     doc_id = str(uuid.uuid4())
     now = datetime.now(timezone.utc).isoformat()
+    file_name = None
+    file_type = None
+    file_url = None
+    extracted_content = content
+    
+    # Handle file upload
+    if file and file.filename:
+        file_ext = Path(file.filename).suffix.lower()
+        if file_ext not in ALLOWED_EXTENSIONS:
+            raise HTTPException(status_code=400, detail=f"Type de fichier non autorisé. Types acceptés: {', '.join(ALLOWED_EXTENSIONS)}")
+        
+        # Read and check file size
+        file_content = await file.read()
+        if len(file_content) > MAX_FILE_SIZE:
+            raise HTTPException(status_code=400, detail="Le fichier dépasse la taille maximale de 10 MB")
+        
+        # Save file
+        file_name = f"{doc_id}{file_ext}"
+        file_path = UPLOAD_DIR / file_name
+        async with aiofiles.open(file_path, 'wb') as f:
+            await f.write(file_content)
+        
+        file_type = file_ext
+        file_url = f"/api/documents/{doc_id}/file"
+        
+        # Extract text for full-text search
+        if file_ext in ['.pdf', '.docx', '.doc', '.xlsx', '.xls', '.txt']:
+            extracted_text = extract_text_from_file(file_path, file_ext)
+            if extracted_text and not content:
+                extracted_content = extracted_text
+            elif extracted_text:
+                extracted_content = f"{content}\n\n--- Contenu extrait du fichier ---\n{extracted_text}"
     
     doc = {
         "id": doc_id,
-        "title": document.title,
-        "content": document.content,
-        "category_id": document.category_id,
-        "visibility": document.visibility,
+        "title": title,
+        "content": extracted_content,
+        "category_id": category_id,
+        "visibility": visibility_list,
         "created_by": current_user["id"],
         "created_at": now,
-        "updated_at": now
+        "updated_at": now,
+        "file_name": file_name,
+        "file_type": file_type,
+        "file_url": file_url,
+        "search_text": f"{title} {extracted_content}".lower()
     }
     
     await db.documents.insert_one(doc)
     
+    # Create notifications for other users
+    await create_notification_for_users(doc_id, title, visibility_list, current_user["id"])
+    
     return DocumentResponse(
-        **doc,
-        category_name=category["name"]
+        **{k: v for k, v in doc.items() if k != "search_text"},
+        category_name=category["name"],
+        created_by_name=current_user["name"],
+        is_favorite=False
     )
 
 @api_router.get("/documents", response_model=List[DocumentResponse])
 async def get_documents(
     category_id: Optional[str] = None,
+    search: Optional[str] = None,
+    favorites_only: bool = False,
     current_user: dict = Depends(get_current_user)
 ):
     query = {"visibility": current_user["role"]}
+    
     if category_id:
         query["category_id"] = category_id
     
-    documents = await db.documents.find(query, {"_id": 0}).sort("created_at", -1).to_list(1000)
+    if search:
+        search_lower = search.lower()
+        query["$or"] = [
+            {"title": {"$regex": search_lower, "$options": "i"}},
+            {"content": {"$regex": search_lower, "$options": "i"}},
+            {"search_text": {"$regex": search_lower, "$options": "i"}}
+        ]
     
-    # Get category names
+    documents = await db.documents.find(query, {"_id": 0, "search_text": 0}).sort("created_at", -1).to_list(1000)
+    
+    # Get category names and creator names
     category_ids = list(set(d["category_id"] for d in documents))
+    creator_ids = list(set(d["created_by"] for d in documents))
+    
     categories = await db.categories.find({"id": {"$in": category_ids}}, {"_id": 0}).to_list(100)
     cat_map = {c["id"]: c["name"] for c in categories}
     
-    return [DocumentResponse(**d, category_name=cat_map.get(d["category_id"], "")) for d in documents]
+    creators = await db.users.find({"id": {"$in": creator_ids}}, {"_id": 0, "id": 1, "name": 1}).to_list(100)
+    creator_map = {c["id"]: c["name"] for c in creators}
+    
+    # Get user's favorites
+    favorites = await db.favorites.find({"user_id": current_user["id"]}, {"_id": 0, "document_id": 1}).to_list(1000)
+    favorite_ids = set(f["document_id"] for f in favorites)
+    
+    # Filter favorites if requested
+    if favorites_only:
+        documents = [d for d in documents if d["id"] in favorite_ids]
+    
+    return [
+        DocumentResponse(
+            **d,
+            category_name=cat_map.get(d["category_id"], ""),
+            created_by_name=creator_map.get(d["created_by"], ""),
+            is_favorite=d["id"] in favorite_ids
+        ) for d in documents
+    ]
 
 @api_router.get("/documents/{doc_id}", response_model=DocumentResponse)
 async def get_document(doc_id: str, current_user: dict = Depends(get_current_user)):
-    doc = await db.documents.find_one({"id": doc_id, "visibility": current_user["role"]}, {"_id": 0})
+    doc = await db.documents.find_one({"id": doc_id, "visibility": current_user["role"]}, {"_id": 0, "search_text": 0})
     if not doc:
         raise HTTPException(status_code=404, detail="Document non trouvé")
     
     category = await db.categories.find_one({"id": doc["category_id"]}, {"_id": 0})
-    return DocumentResponse(**doc, category_name=category["name"] if category else "")
+    creator = await db.users.find_one({"id": doc["created_by"]}, {"_id": 0, "name": 1})
+    
+    favorite = await db.favorites.find_one({"user_id": current_user["id"], "document_id": doc_id})
+    
+    return DocumentResponse(
+        **doc,
+        category_name=category["name"] if category else "",
+        created_by_name=creator["name"] if creator else "",
+        is_favorite=favorite is not None
+    )
+
+@api_router.get("/documents/{doc_id}/file")
+async def get_document_file(doc_id: str, current_user: dict = Depends(get_current_user)):
+    doc = await db.documents.find_one({"id": doc_id, "visibility": current_user["role"]}, {"_id": 0})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document non trouvé")
+    
+    if not doc.get("file_name"):
+        raise HTTPException(status_code=404, detail="Pas de fichier associé")
+    
+    file_path = UPLOAD_DIR / doc["file_name"]
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="Fichier non trouvé")
+    
+    # Determine content type
+    ext = Path(doc["file_name"]).suffix.lower()
+    content_types = {
+        '.pdf': 'application/pdf',
+        '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        '.doc': 'application/msword',
+        '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        '.xls': 'application/vnd.ms-excel',
+        '.png': 'image/png',
+        '.jpg': 'image/jpeg',
+        '.jpeg': 'image/jpeg',
+        '.gif': 'image/gif',
+        '.txt': 'text/plain'
+    }
+    
+    async def file_iterator():
+        async with aiofiles.open(file_path, 'rb') as f:
+            while chunk := await f.read(8192):
+                yield chunk
+    
+    return StreamingResponse(
+        file_iterator(),
+        media_type=content_types.get(ext, 'application/octet-stream'),
+        headers={"Content-Disposition": f"inline; filename={doc['file_name']}"}
+    )
 
 @api_router.put("/documents/{doc_id}", response_model=DocumentResponse)
-async def update_document(doc_id: str, update: DocumentUpdate, current_user: dict = Depends(get_current_user)):
+async def update_document(
+    doc_id: str,
+    title: Optional[str] = Form(None),
+    content: Optional[str] = Form(None),
+    category_id: Optional[str] = Form(None),
+    visibility: Optional[str] = Form(None),
+    file: Optional[UploadFile] = File(None),
+    current_user: dict = Depends(get_current_user)
+):
     doc = await db.documents.find_one({"id": doc_id}, {"_id": 0})
     if not doc:
         raise HTTPException(status_code=404, detail="Document non trouvé")
     
-    # Only creator or admin can edit
-    if doc["created_by"] != current_user["id"] and current_user["role"] != UserRole.ADMIN:
+    # Check permissions: Admin/Direction can edit all, others only their own
+    can_edit = (
+        current_user["role"] in [UserRole.ADMIN, UserRole.DIRECTION] or
+        doc["created_by"] == current_user["id"]
+    )
+    if not can_edit:
         raise HTTPException(status_code=403, detail="Non autorisé")
     
-    update_data = {k: v for k, v in update.model_dump().items() if v is not None}
-    update_data["updated_at"] = datetime.now(timezone.utc).isoformat()
+    update_data = {"updated_at": datetime.now(timezone.utc).isoformat()}
+    
+    if title is not None:
+        update_data["title"] = title
+    if content is not None:
+        update_data["content"] = content
+    if category_id is not None:
+        update_data["category_id"] = category_id
+    if visibility is not None:
+        update_data["visibility"] = [v.strip() for v in visibility.split(",")]
+    
+    # Handle new file upload
+    if file and file.filename:
+        file_ext = Path(file.filename).suffix.lower()
+        if file_ext not in ALLOWED_EXTENSIONS:
+            raise HTTPException(status_code=400, detail="Type de fichier non autorisé")
+        
+        file_content = await file.read()
+        if len(file_content) > MAX_FILE_SIZE:
+            raise HTTPException(status_code=400, detail="Fichier trop volumineux")
+        
+        # Delete old file
+        if doc.get("file_name"):
+            old_file = UPLOAD_DIR / doc["file_name"]
+            if old_file.exists():
+                old_file.unlink()
+        
+        # Save new file
+        file_name = f"{doc_id}{file_ext}"
+        file_path = UPLOAD_DIR / file_name
+        async with aiofiles.open(file_path, 'wb') as f:
+            await f.write(file_content)
+        
+        update_data["file_name"] = file_name
+        update_data["file_type"] = file_ext
+        update_data["file_url"] = f"/api/documents/{doc_id}/file"
+        
+        # Extract text
+        if file_ext in ['.pdf', '.docx', '.doc', '.xlsx', '.xls', '.txt']:
+            extracted_text = extract_text_from_file(file_path, file_ext)
+            if extracted_text:
+                current_content = update_data.get("content", doc.get("content", ""))
+                update_data["content"] = f"{current_content}\n\n--- Contenu extrait ---\n{extracted_text}"
+    
+    # Update search text
+    final_title = update_data.get("title", doc["title"])
+    final_content = update_data.get("content", doc["content"])
+    update_data["search_text"] = f"{final_title} {final_content}".lower()
     
     await db.documents.update_one({"id": doc_id}, {"$set": update_data})
     
-    updated_doc = await db.documents.find_one({"id": doc_id}, {"_id": 0})
+    updated_doc = await db.documents.find_one({"id": doc_id}, {"_id": 0, "search_text": 0})
     category = await db.categories.find_one({"id": updated_doc["category_id"]}, {"_id": 0})
+    creator = await db.users.find_one({"id": updated_doc["created_by"]}, {"_id": 0, "name": 1})
+    favorite = await db.favorites.find_one({"user_id": current_user["id"], "document_id": doc_id})
     
-    return DocumentResponse(**updated_doc, category_name=category["name"] if category else "")
+    return DocumentResponse(
+        **updated_doc,
+        category_name=category["name"] if category else "",
+        created_by_name=creator["name"] if creator else "",
+        is_favorite=favorite is not None
+    )
 
 @api_router.delete("/documents/{doc_id}")
 async def delete_document(doc_id: str, current_user: dict = Depends(get_current_user)):
@@ -366,12 +673,181 @@ async def delete_document(doc_id: str, current_user: dict = Depends(get_current_
     if not doc:
         raise HTTPException(status_code=404, detail="Document non trouvé")
     
-    # Only creator or admin can delete
-    if doc["created_by"] != current_user["id"] and current_user["role"] != UserRole.ADMIN:
+    # Check permissions
+    can_delete = (
+        current_user["role"] in [UserRole.ADMIN, UserRole.DIRECTION] or
+        doc["created_by"] == current_user["id"]
+    )
+    if not can_delete:
         raise HTTPException(status_code=403, detail="Non autorisé")
     
+    # Delete file
+    if doc.get("file_name"):
+        file_path = UPLOAD_DIR / doc["file_name"]
+        if file_path.exists():
+            file_path.unlink()
+    
+    # Delete related data
     await db.documents.delete_one({"id": doc_id})
+    await db.favorites.delete_many({"document_id": doc_id})
+    await db.notifications.delete_many({"document_id": doc_id})
+    
     return {"message": "Document supprimé"}
+
+# ============== EXPORT PDF ENDPOINT ==============
+
+@api_router.post("/documents/export-pdf")
+async def export_documents_pdf(request: ExportPDFRequest, current_user: dict = Depends(get_current_user)):
+    if not request.document_ids:
+        raise HTTPException(status_code=400, detail="Aucun document sélectionné")
+    
+    # Get documents
+    documents = await db.documents.find(
+        {"id": {"$in": request.document_ids}, "visibility": current_user["role"]},
+        {"_id": 0, "search_text": 0}
+    ).to_list(100)
+    
+    if not documents:
+        raise HTTPException(status_code=404, detail="Aucun document trouvé")
+    
+    # Get categories
+    cat_ids = list(set(d["category_id"] for d in documents))
+    categories = await db.categories.find({"id": {"$in": cat_ids}}, {"_id": 0}).to_list(100)
+    cat_map = {c["id"]: c["name"] for c in categories}
+    
+    # Create PDF
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=A4, rightMargin=72, leftMargin=72, topMargin=72, bottomMargin=72)
+    
+    styles = getSampleStyleSheet()
+    title_style = ParagraphStyle('Title', parent=styles['Heading1'], fontSize=18, spaceAfter=12)
+    subtitle_style = ParagraphStyle('Subtitle', parent=styles['Normal'], fontSize=10, textColor='gray', spaceAfter=20)
+    heading_style = ParagraphStyle('Heading', parent=styles['Heading2'], fontSize=14, spaceBefore=20, spaceAfter=10)
+    body_style = ParagraphStyle('Body', parent=styles['Normal'], fontSize=11, spaceAfter=12, leading=14)
+    
+    story = []
+    
+    # Header
+    story.append(Paragraph("Assistant IA Médical - Export de documents", title_style))
+    story.append(Paragraph(f"Généré le {datetime.now().strftime('%d/%m/%Y à %H:%M')}", subtitle_style))
+    story.append(Spacer(1, 0.3*inch))
+    
+    for doc_data in documents:
+        story.append(Paragraph(doc_data["title"], heading_style))
+        story.append(Paragraph(f"Catégorie: {cat_map.get(doc_data['category_id'], 'N/A')} | Date: {doc_data['created_at'][:10]}", subtitle_style))
+        
+        # Clean and format content
+        content = doc_data["content"].replace("\n", "<br/>")
+        story.append(Paragraph(content, body_style))
+        story.append(Spacer(1, 0.3*inch))
+    
+    doc.build(story)
+    buffer.seek(0)
+    
+    return StreamingResponse(
+        buffer,
+        media_type="application/pdf",
+        headers={"Content-Disposition": "attachment; filename=documents_export.pdf"}
+    )
+
+# ============== FAVORITES ENDPOINTS ==============
+
+@api_router.post("/favorites/{document_id}")
+async def add_favorite(document_id: str, current_user: dict = Depends(get_current_user)):
+    # Check document exists and user can access it
+    doc = await db.documents.find_one({"id": document_id, "visibility": current_user["role"]})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document non trouvé")
+    
+    # Check if already favorited
+    existing = await db.favorites.find_one({"user_id": current_user["id"], "document_id": document_id})
+    if existing:
+        return {"message": "Déjà en favoris"}
+    
+    favorite = {
+        "id": str(uuid.uuid4()),
+        "user_id": current_user["id"],
+        "document_id": document_id,
+        "created_at": datetime.now(timezone.utc).isoformat()
+    }
+    
+    await db.favorites.insert_one(favorite)
+    return {"message": "Ajouté aux favoris", "id": favorite["id"]}
+
+@api_router.delete("/favorites/{document_id}")
+async def remove_favorite(document_id: str, current_user: dict = Depends(get_current_user)):
+    result = await db.favorites.delete_one({"user_id": current_user["id"], "document_id": document_id})
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Favori non trouvé")
+    return {"message": "Retiré des favoris"}
+
+@api_router.get("/favorites", response_model=List[DocumentResponse])
+async def get_favorites(current_user: dict = Depends(get_current_user)):
+    # Get user's favorites
+    favorites = await db.favorites.find({"user_id": current_user["id"]}, {"_id": 0}).to_list(1000)
+    doc_ids = [f["document_id"] for f in favorites]
+    
+    if not doc_ids:
+        return []
+    
+    # Get documents
+    documents = await db.documents.find(
+        {"id": {"$in": doc_ids}, "visibility": current_user["role"]},
+        {"_id": 0, "search_text": 0}
+    ).to_list(1000)
+    
+    # Get category and creator names
+    cat_ids = list(set(d["category_id"] for d in documents))
+    creator_ids = list(set(d["created_by"] for d in documents))
+    
+    categories = await db.categories.find({"id": {"$in": cat_ids}}, {"_id": 0}).to_list(100)
+    cat_map = {c["id"]: c["name"] for c in categories}
+    
+    creators = await db.users.find({"id": {"$in": creator_ids}}, {"_id": 0, "id": 1, "name": 1}).to_list(100)
+    creator_map = {c["id"]: c["name"] for c in creators}
+    
+    return [
+        DocumentResponse(
+            **d,
+            category_name=cat_map.get(d["category_id"], ""),
+            created_by_name=creator_map.get(d["created_by"], ""),
+            is_favorite=True
+        ) for d in documents
+    ]
+
+# ============== NOTIFICATIONS ENDPOINTS ==============
+
+@api_router.get("/notifications", response_model=List[NotificationResponse])
+async def get_notifications(current_user: dict = Depends(get_current_user)):
+    notifications = await db.notifications.find(
+        {"user_id": current_user["id"]},
+        {"_id": 0}
+    ).sort("created_at", -1).limit(50).to_list(50)
+    
+    return [NotificationResponse(**n) for n in notifications]
+
+@api_router.get("/notifications/unread-count")
+async def get_unread_count(current_user: dict = Depends(get_current_user)):
+    count = await db.notifications.count_documents({"user_id": current_user["id"], "is_read": False})
+    return {"count": count}
+
+@api_router.put("/notifications/{notification_id}/read")
+async def mark_notification_read(notification_id: str, current_user: dict = Depends(get_current_user)):
+    result = await db.notifications.update_one(
+        {"id": notification_id, "user_id": current_user["id"]},
+        {"$set": {"is_read": True}}
+    )
+    if result.modified_count == 0:
+        raise HTTPException(status_code=404, detail="Notification non trouvée")
+    return {"message": "Marquée comme lue"}
+
+@api_router.put("/notifications/read-all")
+async def mark_all_notifications_read(current_user: dict = Depends(get_current_user)):
+    await db.notifications.update_many(
+        {"user_id": current_user["id"], "is_read": False},
+        {"$set": {"is_read": True}}
+    )
+    return {"message": "Toutes les notifications marquées comme lues"}
 
 # ============== AI ASSISTANT ENDPOINTS ==============
 
@@ -464,7 +940,6 @@ Question de l'utilisateur: {request.question}
 Réponds à cette question en te basant sur les documents ci-dessus.""")
         response = await chat.send_message(message)
         
-        # Save Q&A to history
         await db.qa_history.insert_one({
             "id": str(uuid.uuid4()),
             "user_id": current_user["id"],
@@ -490,14 +965,18 @@ async def get_qa_history(current_user: dict = Depends(get_current_user)):
 
 @api_router.get("/dashboard/stats", response_model=DashboardStats)
 async def get_dashboard_stats(current_user: dict = Depends(get_current_user)):
-    # Total documents accessible to user
     total_docs = await db.documents.count_documents({"visibility": current_user["role"]})
     
-    # Total users (admin only sees all)
     if current_user["role"] == UserRole.ADMIN:
         total_users = await db.users.count_documents({})
     else:
         total_users = 0
+    
+    # Favorites count
+    total_favorites = await db.favorites.count_documents({"user_id": current_user["id"]})
+    
+    # Unread notifications
+    unread_notifications = await db.notifications.count_documents({"user_id": current_user["id"], "is_read": False})
     
     # Documents by category
     pipeline = [
@@ -506,7 +985,6 @@ async def get_dashboard_stats(current_user: dict = Depends(get_current_user)):
     ]
     docs_by_cat = await db.documents.aggregate(pipeline).to_list(100)
     
-    # Get category names
     cat_ids = [d["_id"] for d in docs_by_cat]
     categories = await db.categories.find({"id": {"$in": cat_ids}}, {"_id": 0}).to_list(100)
     cat_map = {c["id"]: c["name"] for c in categories}
@@ -532,6 +1010,8 @@ async def get_dashboard_stats(current_user: dict = Depends(get_current_user)):
     return DashboardStats(
         total_documents=total_docs,
         total_users=total_users,
+        total_favorites=total_favorites,
+        unread_notifications=unread_notifications,
         documents_by_category=docs_by_category,
         users_by_role=users_by_role,
         recent_documents=recent_documents
@@ -541,15 +1021,12 @@ async def get_dashboard_stats(current_user: dict = Depends(get_current_user)):
 
 @api_router.post("/seed-data")
 async def seed_demo_data(current_user: dict = Depends(require_admin)):
-    """Seed demo categories and documents"""
     now = datetime.now(timezone.utc).isoformat()
     
-    # Check if already seeded
     cat_count = await db.categories.count_documents({})
     if cat_count > 0:
         return {"message": "Données déjà initialisées"}
     
-    # Create categories
     categories = [
         {"id": str(uuid.uuid4()), "name": "Protocoles Médicaux", "description": "Protocoles et procédures médicales", "created_at": now},
         {"id": str(uuid.uuid4()), "name": "Ressources Humaines", "description": "Documents RH et administratifs", "created_at": now},
@@ -559,7 +1036,6 @@ async def seed_demo_data(current_user: dict = Depends(require_admin)):
     
     await db.categories.insert_many(categories)
     
-    # Create documents
     documents = [
         {
             "id": str(uuid.uuid4()),
@@ -577,7 +1053,8 @@ Ce protocole doit être appliqué avant et après chaque contact patient.""",
             "visibility": [UserRole.ADMIN, UserRole.DIRECTION, UserRole.PERSONNEL_SOIGNANT],
             "created_by": current_user["id"],
             "created_at": now,
-            "updated_at": now
+            "updated_at": now,
+            "search_text": "protocole hygiène mains savon frotter rincer sécher patient"
         },
         {
             "id": str(uuid.uuid4()),
@@ -593,7 +1070,8 @@ Contact RH: rh@hopital.fr""",
             "visibility": [UserRole.ADMIN, UserRole.DIRECTION],
             "created_by": current_user["id"],
             "created_at": now,
-            "updated_at": now
+            "updated_at": now,
+            "search_text": "guide accueil nouveaux employés intégration formation rh"
         },
         {
             "id": str(uuid.uuid4()),
@@ -610,7 +1088,8 @@ Inscription obligatoire via le portail RH.""",
             "visibility": [UserRole.ADMIN, UserRole.DIRECTION, UserRole.PERSONNEL_SOIGNANT],
             "created_by": current_user["id"],
             "created_at": now,
-            "updated_at": now
+            "updated_at": now,
+            "search_text": "formation gestes urgence réanimation défibrillateur voies aériennes"
         },
         {
             "id": str(uuid.uuid4()),
@@ -628,7 +1107,8 @@ Référent DPO: dpo@hopital.fr""",
             "visibility": [UserRole.ADMIN, UserRole.DIRECTION],
             "created_by": current_user["id"],
             "created_at": now,
-            "updated_at": now
+            "updated_at": now,
+            "search_text": "conformité rgpd données patients protection consentement dpo"
         },
     ]
     
@@ -640,9 +1120,8 @@ Référent DPO: dpo@hopital.fr""",
 
 @api_router.get("/")
 async def root():
-    return {"message": "API Assistant IA Médical", "version": "1.0.0"}
+    return {"message": "API Assistant IA Médical", "version": "2.0.0"}
 
-# Include the router in the main app
 app.include_router(api_router)
 
 app.add_middleware(
