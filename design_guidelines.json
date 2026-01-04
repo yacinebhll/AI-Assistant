@@ -1,0 +1,189 @@
+{
+  "identity": {
+    "name": "E1 - The Anti-AI Designer",
+    "mission": "Create a 'Clinical Zen' interface that balances medical precision with human warmth. Avoid the sterile 'hospital software' look.",
+    "principles": [
+      "Fusion: Linear meets Healthcare",
+      "Emotion: Calm, Trust, Intelligence",
+      "Content: Data clarity is paramount",
+      "Negative Space: High density data needs breathing room"
+    ]
+  },
+  "typography": {
+    "fonts": [
+      {
+        "family": "Plus Jakarta Sans",
+        "url": "https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap",
+        "usage": "Headings, Navigation, Buttons",
+        "fallback": "sans-serif"
+      },
+      {
+        "family": "Inter",
+        "url": "https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&display=swap",
+        "usage": "Body text, Data tables, Inputs",
+        "fallback": "sans-serif"
+      },
+      {
+        "family": "JetBrains Mono",
+        "url": "https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&display=swap",
+        "usage": "Medical Codes, IDs, Logs",
+        "fallback": "monospace"
+      }
+    ],
+    "rules": {
+      "h1": "font-sans font-bold text-4xl tracking-tight text-foreground",
+      "h2": "font-sans font-semibold text-2xl tracking-tight text-foreground/90",
+      "h3": "font-sans font-medium text-xl text-foreground/80",
+      "body": "font-body text-base leading-relaxed text-muted-foreground",
+      "small": "font-body text-sm text-muted-foreground/80",
+      "code": "font-mono text-xs bg-muted px-1 py-0.5 rounded text-foreground"
+    }
+  },
+  "colors": {
+    "palette": {
+      "light": {
+        "background": "0 0% 100%",
+        "foreground": "215 25% 27%",
+        "card": "0 0% 100%",
+        "card-foreground": "215 25% 27%",
+        "popover": "0 0% 100%",
+        "popover-foreground": "215 25% 27%",
+        "primary": "199 89% 48%",
+        "primary-foreground": "0 0% 100%",
+        "secondary": "210 40% 96.1%",
+        "secondary-foreground": "222 47% 11.2%",
+        "muted": "210 40% 96.1%",
+        "muted-foreground": "215 16% 47%",
+        "accent": "199 89% 48%",
+        "accent-foreground": "0 0% 100%",
+        "destructive": "0 84.2% 60.2%",
+        "destructive-foreground": "210 40% 98%",
+        "border": "214 32% 91%",
+        "input": "214 32% 91%",
+        "ring": "199 89% 48%",
+        "chart-1": "199 89% 48%",
+        "chart-2": "160 84% 39%",
+        "chart-3": "230 60% 55%",
+        "chart-4": "35 90% 60%",
+        "chart-5": "340 75% 55%"
+      },
+      "dark": {
+        "background": "222 47% 11%",
+        "foreground": "210 40% 98%",
+        "card": "222 47% 11%",
+        "card-foreground": "210 40% 98%",
+        "popover": "222 47% 11%",
+        "popover-foreground": "210 40% 98%",
+        "primary": "199 89% 48%",
+        "primary-foreground": "0 0% 100%",
+        "secondary": "217 33% 17%",
+        "secondary-foreground": "210 40% 98%",
+        "muted": "217 33% 17%",
+        "muted-foreground": "215 20% 65%",
+        "accent": "199 89% 48%",
+        "accent-foreground": "0 0% 100%",
+        "destructive": "0 62.8% 30.6%",
+        "destructive-foreground": "210 40% 98%",
+        "border": "217 33% 17%",
+        "input": "217 33% 17%",
+        "ring": "199 89% 48%",
+        "chart-1": "199 89% 48%",
+        "chart-2": "160 60% 45%",
+        "chart-3": "30 80% 55%",
+        "chart-4": "280 65% 60%",
+        "chart-5": "340 75% 55%"
+      }
+    },
+    "semantic": {
+      "brand": "Teal-Blue (Intelligence, Calm)",
+      "success": "Emerald (Positive outcomes)",
+      "warning": "Amber (Alerts)",
+      "error": "Rose (Critical errors)",
+      "info": "Sky (Information)"
+    }
+  },
+  "layout": {
+    "grid": {
+      "dashboard": "grid grid-cols-1 md:grid-cols-12 gap-6",
+      "cards": "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6"
+    },
+    "spacing": {
+      "container": "p-6 md:p-8 lg:p-10",
+      "section": "py-12",
+      "element": "gap-4"
+    },
+    "radius": {
+      "default": "0.5rem",
+      "button": "0.5rem",
+      "card": "0.75rem"
+    }
+  },
+  "components": {
+    "Button": {
+      "default": "rounded-md font-medium transition-all active:scale-95",
+      "primary": "bg-primary text-primary-foreground hover:bg-primary/90 shadow-sm",
+      "ghost": "hover:bg-accent/10 hover:text-accent"
+    },
+    "Card": {
+      "style": "bg-card text-card-foreground border border-border shadow-sm hover:shadow-md transition-shadow duration-200 rounded-xl"
+    },
+    "Input": {
+      "style": "bg-background border-input focus:ring-2 focus:ring-primary/20 transition-all rounded-md"
+    },
+    "Sidebar": {
+      "style": "bg-card/80 backdrop-blur-xl border-r border-border"
+    }
+  },
+  "images": {
+    "login_bg": {
+      "url": "https://images.unsplash.com/photo-1682684123154-c21854fd90cf?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NDk1Nzd8MHwxfHNlYXJjaHwzfHxtZWRpY2FsJTIwdGVjaG5vbG9neSUyMGFic3RyYWN0JTIwbWluaW1hbGlzdHxlbnwwfHx8fDE3Njc1MzI2MTl8MA&ixlib=rb-4.1.0&q=85",
+      "alt": "Abstract Medical Clean Background",
+      "usage": "Login page side panel or background overlay"
+    },
+    "assistant_avatar": {
+      "url": "https://images.pexels.com/photos/5215017/pexels-photo-5215017.jpeg",
+      "alt": "AI Medical Assistant Avatar",
+      "usage": "Chat interface avatar, Welcome screen"
+    },
+    "team_placeholder": {
+      "url": "https://images.unsplash.com/photo-1755189118414-14c8dacdb082?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NDk1Nzh8MHwxfHNlYXJjaHwxfHxkb2N0b3IlMjBwcm9mZXNzaW9uYWwlMjBwb3J0cmFpdCUyMGhvc3BpdGFsfGVufDB8fHx8MTc2NzUzMjYyMXww&ixlib=rb-4.1.0&q=85",
+      "alt": "Medical Team",
+      "usage": "About page, Team section"
+    },
+    "doctor_profile": {
+      "url": "https://images.unsplash.com/photo-1615177393114-bd2917a4f74a?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NDk1Nzh8MHwxfHNlYXJjaHwyfHxkb2N0b3IlMjBwcm9mZXNzaW9uYWwlMjBwb3J0cmFpdCUyMGhvc3BpdGFsfGVufDB8fHx8MTc2NzUzMjYyMXww&ixlib=rb-4.1.0&q=85",
+      "alt": "Doctor Profile",
+      "usage": "User profile placeholder"
+    }
+  },
+  "icons": {
+    "library": "lucide-react",
+    "style": "stroke-width={1.5} className='w-5 h-5'"
+  },
+  "motion": {
+    "library": "framer-motion",
+    "transitions": {
+      "default": { "type": "spring", "stiffness": 300, "damping": 30 },
+      "page": { "duration": 0.3, "ease": "easeInOut" }
+    }
+  },
+  "instructions_to_main_agent": [
+    "1. SETUP: Install 'lucide-react', 'recharts', 'framer-motion', 'clsx', 'tailwind-merge' if not present.",
+    "2. THEME: Update 'tailwind.config.js' and 'index.css' with the provided color palette. Ensure Dark Mode is class-based.",
+    "3. FONTS: Add the Google Fonts links to 'index.html' or import in CSS.",
+    "4. LAYOUT: Create a 'Layout' component with a Sidebar (collapsible) and a Topbar (Glassmorphism).",
+    "5. DASHBOARD: Implement the 'Control Room' grid. Use Recharts for data. Cards should be clean with subtle borders.",
+    "6. ASSISTANT: Build a chat interface. Use the 'assistant_avatar' image. Messages should be bubbled with distinct colors (User: Primary/10, AI: Muted).",
+    "7. DOCUMENTS: Use a Data Table (Shadcn compatible). Add row hover effects.",
+    "8. AUTH: Create a split-screen Login page. Left: Form, Right: 'login_bg' image with a quote overlay.",
+    "9. ACCESSIBILITY: Ensure all inputs have labels, images have alt text, and colors meet contrast ratios (checked in palette)."
+  ],
+  "UNIVERSAL_GUIDELINES_FOR_MAIN_AGENT": [
+    "DO NOT use gradients for backgrounds unless specified (use solid colors or subtle noise).",
+    "DO NOT center text in cards unless it's a specific 'Stat' card.",
+    "ALWAYS use 'data-testid' for interactive elements.",
+    "ALWAYS use 'sonner' for toasts.",
+    "Use 'clsx' and 'tailwind-merge' for dynamic class names.",
+    "Keep the interface 'Breathable' - avoid cluttering the dashboard."
+  ]
+}
