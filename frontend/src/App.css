@@ -1,34 +1,75 @@
-.App-logo {
-    height: 40vmin;
-    pointer-events: none;
+/* Base styles - Keeping minimal for Tailwind */
+.App {
+  min-height: 100vh;
 }
 
-@media (prefers-reduced-motion: no-preference) {
-    .App-logo {
-        animation: App-logo-spin infinite 20s linear;
-    }
+/* Prose styling for markdown content */
+.prose h1 {
+  @apply text-2xl font-bold mt-6 mb-3;
 }
 
-.App-header {
-    background-color: #0f0f10;
-    min-height: 100vh;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    font-size: calc(10px + 2vmin);
-    color: white;
+.prose h2 {
+  @apply text-xl font-semibold mt-5 mb-2;
 }
 
-.App-link {
-    color: #61dafb;
+.prose h3 {
+  @apply text-lg font-medium mt-4 mb-2;
 }
 
-@keyframes App-logo-spin {
-    from {
-        transform: rotate(0deg);
-    }
-    to {
-        transform: rotate(360deg);
-    }
+.prose p {
+  @apply mb-3 leading-relaxed;
+}
+
+.prose ul, .prose ol {
+  @apply mb-3 pl-4;
+}
+
+.prose li {
+  @apply mb-1;
+}
+
+.prose strong {
+  @apply font-semibold;
+}
+
+/* Dark mode prose adjustments */
+.dark .prose {
+  @apply text-foreground;
+}
+
+.dark .prose h1,
+.dark .prose h2,
+.dark .prose h3 {
+  @apply text-foreground;
+}
+
+/* Card hover effect */
+.card-hover {
+  @apply transition-all duration-200 hover:shadow-md;
+}
+
+/* Smooth transitions */
+* {
+  transition-property: background-color, border-color, color;
+  transition-duration: 150ms;
+  transition-timing-function: ease-in-out;
+}
+
+/* Button press effect */
+button:active:not(:disabled) {
+  transform: scale(0.98);
+}
+
+/* Focus ring for accessibility */
+*:focus-visible {
+  @apply outline-none ring-2 ring-primary ring-offset-2 ring-offset-background;
+}
+
+/* Scrollbar in dark mode */
+.dark ::-webkit-scrollbar-track {
+  @apply bg-secondary/50;
+}
+
+.dark ::-webkit-scrollbar-thumb {
+  @apply bg-muted-foreground/30;
 }
