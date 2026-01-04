@@ -8,7 +8,8 @@ import { toast } from 'sonner';
 import {
   FileText,
   Users,
-  TrendingUp,
+  Star,
+  Bell,
   Calendar,
   Database,
   RefreshCw,
@@ -21,8 +22,6 @@ import {
   CartesianGrid,
   Tooltip,
   ResponsiveContainer,
-  LineChart,
-  Line,
 } from 'recharts';
 
 const Dashboard = () => {
@@ -120,6 +119,32 @@ const Dashboard = () => {
           </CardContent>
         </Card>
 
+        <Card className="card-hover">
+          <CardHeader className="flex flex-row items-center justify-between pb-2">
+            <CardTitle className="text-sm font-medium text-muted-foreground">
+              Favoris
+            </CardTitle>
+            <Star className="w-5 h-5 text-yellow-500" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-3xl font-bold">{stats?.total_favorites || 0}</div>
+            <p className="text-xs text-muted-foreground mt-1">Documents favoris</p>
+          </CardContent>
+        </Card>
+
+        <Card className="card-hover">
+          <CardHeader className="flex flex-row items-center justify-between pb-2">
+            <CardTitle className="text-sm font-medium text-muted-foreground">
+              Notifications
+            </CardTitle>
+            <Bell className="w-5 h-5 text-chart-3" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-3xl font-bold">{stats?.unread_notifications || 0}</div>
+            <p className="text-xs text-muted-foreground mt-1">Non lues</p>
+          </CardContent>
+        </Card>
+
         {isAdmin && (
           <Card className="card-hover">
             <CardHeader className="flex flex-row items-center justify-between pb-2">
@@ -135,35 +160,24 @@ const Dashboard = () => {
           </Card>
         )}
 
-        <Card className="card-hover">
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">
-              Catégories
-            </CardTitle>
-            <TrendingUp className="w-5 h-5 text-chart-3" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-3xl font-bold">{stats?.documents_by_category?.length || 0}</div>
-            <p className="text-xs text-muted-foreground mt-1">Catégories actives</p>
-          </CardContent>
-        </Card>
-
-        <Card className="card-hover">
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">
-              Dernière mise à jour
-            </CardTitle>
-            <Calendar className="w-5 h-5 text-chart-4" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-lg font-bold">
-              {stats?.recent_documents?.[0]?.date
-                ? new Date(stats.recent_documents[0].date).toLocaleDateString('fr-FR')
-                : 'Aucune'}
-            </div>
-            <p className="text-xs text-muted-foreground mt-1">Dernier document ajouté</p>
-          </CardContent>
-        </Card>
+        {!isAdmin && (
+          <Card className="card-hover">
+            <CardHeader className="flex flex-row items-center justify-between pb-2">
+              <CardTitle className="text-sm font-medium text-muted-foreground">
+                Dernière mise à jour
+              </CardTitle>
+              <Calendar className="w-5 h-5 text-chart-4" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-lg font-bold">
+                {stats?.recent_documents?.[0]?.date
+                  ? new Date(stats.recent_documents[0].date).toLocaleDateString('fr-FR')
+                  : 'Aucune'}
+              </div>
+              <p className="text-xs text-muted-foreground mt-1">Dernier document ajouté</p>
+            </CardContent>
+          </Card>
+        )}
       </div>
 
       {/* Charts */}

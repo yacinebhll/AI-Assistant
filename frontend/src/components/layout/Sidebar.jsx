@@ -1,11 +1,13 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { useTheme } from '../../contexts/ThemeContext';
+import { useNotifications } from '../../contexts/NotificationContext';
 import { Button } from '../ui/button';
 import { ScrollArea } from '../ui/scroll-area';
 import { Separator } from '../ui/separator';
 import { Switch } from '../ui/switch';
+import { Badge } from '../ui/badge';
 import {
   LayoutDashboard,
   Bot,
@@ -19,12 +21,15 @@ import {
   Sun,
   Moon,
   Stethoscope,
+  Bell,
+  Star,
 } from 'lucide-react';
 import { cn } from '../../lib/utils';
 
 const Sidebar = () => {
   const { user, logout, isAdmin } = useAuth();
-  const { theme, toggleTheme, isDark } = useTheme();
+  const { toggleTheme, isDark } = useTheme();
+  const { unreadCount } = useNotifications();
   const navigate = useNavigate();
   const [collapsed, setCollapsed] = useState(false);
 
@@ -37,7 +42,9 @@ const Sidebar = () => {
     { to: '/dashboard', icon: LayoutDashboard, label: 'Tableau de bord' },
     { to: '/assistant', icon: Bot, label: 'Assistant IA' },
     { to: '/documents', icon: FileText, label: 'Documents' },
+    { to: '/favorites', icon: Star, label: 'Favoris' },
     { to: '/categories', icon: FolderOpen, label: 'Catégories' },
+    { to: '/notifications', icon: Bell, label: 'Notifications', badge: unreadCount },
     ...(isAdmin ? [{ to: '/users', icon: Users, label: 'Utilisateurs' }] : []),
     { to: '/settings', icon: Settings, label: 'Paramètres' },
   ];
@@ -52,7 +59,7 @@ const Sidebar = () => {
     <aside
       data-testid="sidebar"
       className={cn(
-        'glass-sidebar border-r border-sidebar-border flex flex-col h-screen transition-all duration-300',
+        'glass-sidebar border-r border-sidebar-border flex flex-col h-screen transition-all duration-300 relative',
         collapsed ? 'w-[70px]' : 'w-[260px]'
       )}
     >
@@ -64,7 +71,7 @@ const Sidebar = () => {
         {!collapsed && (
           <div className="animate-fade-in">
             <h1 className="font-semibold text-foreground">Assistant IA</h1>
-            <p className="text-xs text-muted-foreground">Médical</p>
+            <p className="text-xs text-muted-foreground">Médical v2.0</p>
           </div>
         )}
       </div>
@@ -89,8 +96,22 @@ const Sidebar = () => {
                 )
               }
             >
-              <item.icon className="w-5 h-5 flex-shrink-0" strokeWidth={1.5} />
-              {!collapsed && <span className="animate-fade-in">{item.label}</span>}
+              <div className="relative">
+                <item.icon className="w-5 h-5 flex-shrink-0" strokeWidth={1.5} />
+                {item.badge > 0 && (
+                  <span className="absolute -top-1.5 -right-1.5 w-4 h-4 bg-destructive text-destructive-foreground text-[10px] font-bold rounded-full flex items-center justify-center">
+                    {item.badge > 9 ? '9+' : item.badge}
+                  </span>
+                )}
+              </div>
+              {!collapsed && (
+                <span className="animate-fade-in flex-1">{item.label}</span>
+              )}
+              {!collapsed && item.badge > 0 && (
+                <Badge variant="destructive" className="h-5 px-1.5 text-xs">
+                  {item.badge}
+                </Badge>
+              )}
             </NavLink>
           ))}
         </nav>

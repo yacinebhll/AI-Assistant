@@ -55,11 +55,34 @@ export const categoriesAPI = {
 
 // Documents API
 export const documentsAPI = {
-  getAll: (categoryId) => api.get('/documents', { params: categoryId ? { category_id: categoryId } : {} }),
+  getAll: (params = {}) => api.get('/documents', { params }),
   getOne: (docId) => api.get(`/documents/${docId}`),
-  create: (data) => api.post('/documents', data),
-  update: (docId, data) => api.put(`/documents/${docId}`, data),
+  create: (formData) => api.post('/documents', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  }),
+  update: (docId, formData) => api.put(`/documents/${docId}`, formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  }),
   delete: (docId) => api.delete(`/documents/${docId}`),
+  getFile: (docId) => `${API_URL}/documents/${docId}/file`,
+  exportPDF: (documentIds) => api.post('/documents/export-pdf', { document_ids: documentIds }, {
+    responseType: 'blob',
+  }),
+};
+
+// Favorites API
+export const favoritesAPI = {
+  getAll: () => api.get('/favorites'),
+  add: (documentId) => api.post(`/favorites/${documentId}`),
+  remove: (documentId) => api.delete(`/favorites/${documentId}`),
+};
+
+// Notifications API
+export const notificationsAPI = {
+  getAll: () => api.get('/notifications'),
+  getUnreadCount: () => api.get('/notifications/unread-count'),
+  markAsRead: (notificationId) => api.put(`/notifications/${notificationId}/read`),
+  markAllAsRead: () => api.put('/notifications/read-all'),
 };
 
 // AI Assistant API
