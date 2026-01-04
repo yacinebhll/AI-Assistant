@@ -40,11 +40,6 @@ const Users = () => {
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  // Redirect non-admin users
-  if (!isAdmin) {
-    return <Navigate to="/dashboard" replace />;
-  }
-
   const fetchUsers = async () => {
     try {
       const response = await usersAPI.getAll();
@@ -57,8 +52,15 @@ const Users = () => {
   };
 
   useEffect(() => {
-    fetchUsers();
-  }, []);
+    if (isAdmin) {
+      fetchUsers();
+    }
+  }, [isAdmin]);
+
+  // Redirect non-admin users
+  if (!isAdmin) {
+    return <Navigate to="/dashboard" replace />;
+  }
 
   const handleRoleChange = async (userId, newRole) => {
     try {
